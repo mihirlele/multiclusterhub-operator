@@ -145,6 +145,46 @@ const (
 	HubError           HubPhaseType = "Error"
 )
 
+// UninstallPhaseType represents the phase of MCH uninstallation escalation
+type UninstallPhaseType string
+
+const (
+	// UninstallNotRequired indicates normal deletion is proceeding without issues; escalation is dormant
+	UninstallNotRequired UninstallPhaseType = "NotRequired"
+
+	// UninstallEscalated indicates stuck deletion detected; aggressive cleanup activated
+	UninstallEscalated UninstallPhaseType = "Escalated"
+
+	// UninstallCompleted indicates all ACM resources removed; MCH CR ready for final removal
+	UninstallCompleted UninstallPhaseType = "Completed"
+)
+
+// UninstallEscalationStatus tracks the state of escalated cleanup when normal deletion is stuck
+type UninstallEscalationStatus struct {
+	// Triggered indicates whether escalation has been activated
+	Triggered bool `json:"triggered"`
+
+	// TriggeredTime records when escalation was first activated
+	// +optional
+	TriggeredTime *metav1.Time `json:"triggeredTime,omitempty"`
+
+	// Reason explains why escalation was triggered (TimeoutExceeded, StuckFinalizer, ResourcePlateau)
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// ResourcesRemaining is the count of ACM-owned resources still to be cleaned
+	// +optional
+	ResourcesRemaining int `json:"resourcesRemaining,omitempty"`
+
+	// LastAttemptTime records the last time escalation cleanup was attempted
+	// +optional
+	LastAttemptTime *metav1.Time `json:"lastAttemptTime,omitempty"`
+
+	// CurrentPass tracks which deletion pass is in progress (1, 2, or 3)
+	// +optional
+	CurrentPass int `json:"currentPass,omitempty"`
+}
+
 // MCEVersionComplianceStatus tracks MultiClusterEngine version compliance against required channel
 type MCEVersionComplianceStatus struct {
 	// RequiredChannel is the channel version that MCE should meet or exceed
@@ -181,6 +221,14 @@ type MultiClusterHubStatus struct {
 
 	// MCEVersionCompliance tracks whether the MCE version meets the required channel version
 	MCEVersionCompliance *MCEVersionComplianceStatus `json:"mceVersionCompliance,omitempty"`
+
+	// UninstallPhase tracks the progression of MCH uninstallation escalation
+	// +optional
+	UninstallPhase UninstallPhaseType `json:"uninstallPhase,omitempty"`
+
+	// UninstallEscalation tracks escalated cleanup state when normal deletion is stuck
+	// +optional
+	UninstallEscalation *UninstallEscalationStatus `json:"uninstallEscalation,omitempty"`
 }
 
 // StatusCondition contains condition information.
@@ -234,6 +282,9 @@ const (
 
 	// ComponentFailure means a deployment failed during an Apply
 	ComponentFailure HubConditionType = "ComponentFailure"
+
+	// UninstallProgressing means escalated uninstallation cleanup is actively in progress
+	UninstallProgressing HubConditionType = "UninstallProgressing"
 )
 
 // StatusCondition contains condition information.

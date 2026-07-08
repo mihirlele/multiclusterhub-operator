@@ -89,6 +89,11 @@ func (r *MultiClusterHubReconciler) setOperatorUpgradeableStatus(ctx context.Con
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *MultiClusterHubReconciler) SetupWithManager(mgr ctrl.Manager) (controller.Controller, error) {
+	if r.EscalationTracker == nil {
+		r.EscalationTracker = &EscalationTracker{
+			StuckFinalizers: make(map[string]time.Time),
+		}
+	}
 	controllerName := "multiclusterhub"
 	if utils.IsUnitTest() {
 		// Use a unique name per test invocation to avoid controller name conflicts

@@ -324,6 +324,41 @@ spec:
               phase:
                 description: Represents the running phase of the MultiClusterHub
                 type: string
+              uninstallEscalation:
+                description: UninstallEscalation tracks escalated cleanup state when
+                  normal deletion is stuck
+                properties:
+                  currentPass:
+                    description: CurrentPass tracks which deletion pass is in progress
+                      (1, 2, or 3)
+                    type: integer
+                  lastAttemptTime:
+                    description: LastAttemptTime records the last time escalation
+                      cleanup was attempted
+                    format: date-time
+                    type: string
+                  reason:
+                    description: Reason explains why escalation was triggered (TimeoutExceeded,
+                      StuckFinalizer, ResourcePlateau)
+                    type: string
+                  resourcesRemaining:
+                    description: ResourcesRemaining is the count of ACM-owned resources
+                      still to be cleaned
+                    type: integer
+                  triggered:
+                    description: Triggered indicates whether escalation has been activated
+                    type: boolean
+                  triggeredTime:
+                    description: TriggeredTime records when escalation was first activated
+                    format: date-time
+                    type: string
+                required:
+                - triggered
+                type: object
+              uninstallPhase:
+                description: UninstallPhase tracks the progression of MCH uninstallation
+                  escalation
+                type: string
             type: object
         type: object
     served: true

@@ -24,6 +24,7 @@ import (
 	"os"
 
 	operatorv1 "github.com/stolostron/multiclusterhub-operator/api/v1"
+	"github.com/stolostron/multiclusterhub-operator/pkg/cleanup"
 	"github.com/stolostron/multiclusterhub-operator/pkg/overrides"
 	utils "github.com/stolostron/multiclusterhub-operator/pkg/utils"
 	"github.com/stolostron/multiclusterhub-operator/pkg/version"
@@ -201,6 +202,24 @@ func (r *MultiClusterHubReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		SetHubCondition(&multiClusterHub.Status, *terminating)
 
 		if controllerutil.ContainsFinalizer(multiClusterHub, hubFinalizer) {
+			// Check if escalation should be triggered for stuck deletion
+			escalationConfig := LoadEscalationConfig()
+			if escalationConfig.EscalationEnabled &&
+				multiClusterHub.Status.UninstallPhase != operatorv1.UninstallEscalated &&
+				multiClusterHub.Status.UninstallPhase != operatorv1.UninstallCompleted {
+				shouldEscalate, reason := r.shouldTriggerEscalation(ctx, multiClusterHub, escalationConfig)
+				if shouldEscalate {
+					r.Log.Info("Triggering escalated cleanup", "reason", reason)
+
+					filter := cleanup.NewACMResourceFilter(multiClusterHub)
+					resourceCount, _ := filter.CountRemainingResources(ctx, r.Client)
+
+					r.triggerEscalation(multiClusterHub, reason, resourceCount)
+					r.emitEscalationEvent(multiClusterHub, reason,
+						fmt.Sprintf("Escalation triggered: %s. Resources remaining: %d", reason, resourceCount))
+				}
+			}
+
 			// Run finalization logic. If the finalization
 			// logic fails, don't remove the finalizer so
 			// that we can retry during the next reconciliation.

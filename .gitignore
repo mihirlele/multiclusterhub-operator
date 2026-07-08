@@ -48,4 +48,4 @@ acm-operator-bundle/
 
 # Scanner and security analysis artifacts
 .scannerwork/
-gosec.json
+gosec.json_specs/

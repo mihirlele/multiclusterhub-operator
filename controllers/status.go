@@ -79,6 +79,14 @@ const (
 	RequirementsNotMetReason = "RequirementsNotMet"
 
 	FailedApplyingComponent = "FailedApplyingComponent"
+
+	// Escalation reasons
+	EscalationTimeoutReason         = "UninstallTimeout"
+	EscalationStuckFinalizerReason  = "StuckFinalizer"
+	EscalationResourcePlateauReason = "ResourcePlateau"
+	EscalationNotRequiredReason     = "NotRequired"
+	EscalationCompletedReason       = "Completed"
+	EscalationCleanupReason         = "EscalatedCleanup"
 )
 
 var (
@@ -167,6 +175,8 @@ func (r *MultiClusterHubReconciler) calculateStatus(ctx context.Context, hub *op
 		DesiredVersion:       version.Version,
 		Components:           components,
 		MCEVersionCompliance: mceVersionCompliance,
+		UninstallPhase:       hub.Status.UninstallPhase,
+		UninstallEscalation:  hub.Status.UninstallEscalation,
 	}
 
 	// Set current version
@@ -756,6 +766,25 @@ func HubConditionPresentWithSubstring(status operatorsv1.MultiClusterHubStatus, 
 		}
 	}
 	return false
+}
+
+// updateUninstallProgressingCondition updates the UninstallProgressing condition based on phase
+func updateUninstallProgressingCondition(status *operatorsv1.MultiClusterHubStatus, phase operatorsv1.UninstallPhaseType, reason, message string) {
+	var conditionStatus metav1.ConditionStatus
+
+	switch phase {
+	case operatorsv1.UninstallNotRequired:
+		conditionStatus = metav1.ConditionFalse
+	case operatorsv1.UninstallEscalated:
+		conditionStatus = metav1.ConditionTrue
+	case operatorsv1.UninstallCompleted:
+		conditionStatus = metav1.ConditionFalse
+	default:
+		conditionStatus = metav1.ConditionFalse
+	}
+
+	condition := NewHubCondition(operatorsv1.UninstallProgressing, conditionStatus, reason, message)
+	SetHubCondition(status, *condition)
 }
 
 func unknownStatus(name, kind string) operatorsv1.StatusCondition {

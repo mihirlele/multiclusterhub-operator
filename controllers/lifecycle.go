@@ -41,6 +41,24 @@ import (
 
 func (r *MultiClusterHubReconciler) finalizeHub(reqLogger logr.Logger, m *operatorv1.MultiClusterHub, ocpConsole,
 	isSTSEnabled bool) error {
+	// Initialize uninstall phase on first deletion reconcile
+	if m.Status.UninstallPhase == "" {
+		r.initializeUninstallPhase(m)
+	}
+
+	// If escalation already triggered, skip normal cleanup and run escalated cleanup
+	if m.Status.UninstallPhase == operatorv1.UninstallEscalated {
+		result, err := r.executeEscalatedCleanup(context.TODO(), m)
+		if err != nil {
+			return err
+		}
+		if result != (ctrl.Result{}) {
+			return fmt.Errorf("requeue needed for escalated cleanup pass")
+		}
+		reqLogger.Info("Escalated cleanup completed successfully")
+		return nil
+	}
+
 	if err := r.cleanupAppSubscriptions(reqLogger, m); err != nil {
 		return err
 	}

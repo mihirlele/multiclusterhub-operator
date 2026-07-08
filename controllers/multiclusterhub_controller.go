@@ -43,13 +43,14 @@ import (
 
 // MultiClusterHubReconciler reconciles a MultiClusterHub object
 type MultiClusterHubReconciler struct {
-	Client          client.Client
-	UncachedClient  client.Client
-	CacheSpec       CacheSpec
-	Scheme          *runtime.Scheme
-	Log             logr.Logger
-	UpgradeableCond utils.Condition
-	OLMVersion      string // "v0", "v1", or "" (no OLM)
+	Client            client.Client
+	UncachedClient    client.Client
+	CacheSpec         CacheSpec
+	Scheme            *runtime.Scheme
+	Log               logr.Logger
+	UpgradeableCond   utils.Condition
+	OLMVersion        string // "v0", "v1", or "" (no OLM)
+	EscalationTracker *EscalationTracker
 }
 
 const (
