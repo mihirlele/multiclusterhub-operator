@@ -178,10 +178,25 @@ func (f *ACMResourceFilter) DiscoverLabeledResources(ctx context.Context, c clie
 	return resources, nil
 }
 
-// ACMCRDSuffixes are CRD name suffixes that identify ACM-related CRDs
+// ACMCRDSuffixes are CRD name suffixes that identify ACM-related CRDs and dependencies
 var ACMCRDSuffixes = []string{
 	".open-cluster-management.io",
 	".multicluster.openshift.io",
+	".agent-install.openshift.io",
+	".hive.openshift.io",
+	".hiveinternal.openshift.io",
+	".extensions.hive.openshift.io",
+	".hypershift.openshift.io",
+	".cluster.x-k8s.io",
+	".infrastructure.cluster.x-k8s.io",
+	".capi-provider.agent-install.openshift.io",
+	".scheduling.hypershift.openshift.io",
+	".certificates.hypershift.openshift.io",
+	".auditlogpersistence.hypershift.openshift.io",
+	".observatorium.io",
+	".wgpolicyk8s.io",
+	".app.k8s.io",
+	".k-orc.cloud",
 }
 
 // DiscoverACMCRDs returns all ACM-related CRDs
@@ -321,8 +336,13 @@ func isACMClusterRole(name string) bool {
 	acmPrefixes := []string{
 		"open-cluster-management",
 		"multiclusterhubs.operator.open-cluster-management.io",
+		"multiclusterengines.multicluster.openshift.io",
+		"multicluster-engine:",
 		"olm.og.open-cluster-management",
 		"system:open-cluster-management",
+		"hypershift",
+		"server-foundation",
+		"klusterlet",
 	}
 	for _, prefix := range acmPrefixes {
 		if strings.HasPrefix(name, prefix) {
@@ -340,6 +360,10 @@ func isACMWebhook(name string) bool {
 		"ocm-webhook",
 		"managedcluster",
 		"klusterlet",
+		"hive",
+		"hypershift",
+		"application-webhook",
+		"channels.apps",
 	}
 	nameLower := strings.ToLower(name)
 	for _, keyword := range acmKeywords {
