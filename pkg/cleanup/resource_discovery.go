@@ -7,10 +7,15 @@ import (
 	"strings"
 
 	operatorv1 "github.com/stolostron/multiclusterhub-operator/api/v1"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -171,4 +176,176 @@ func (f *ACMResourceFilter) DiscoverLabeledResources(ctx context.Context, c clie
 	}
 
 	return resources, nil
+}
+
+// ACMCRDSuffixes are CRD name suffixes that identify ACM-related CRDs
+var ACMCRDSuffixes = []string{
+	".open-cluster-management.io",
+	".multicluster.openshift.io",
+}
+
+// DiscoverACMCRDs returns all ACM-related CRDs
+func DiscoverACMCRDs(ctx context.Context, c client.Client) ([]apiextensionsv1.CustomResourceDefinition, error) {
+	crdList := &apiextensionsv1.CustomResourceDefinitionList{}
+	if err := c.List(ctx, crdList); err != nil {
+		return nil, err
+	}
+
+	var acmCRDs []apiextensionsv1.CustomResourceDefinition
+	for _, crd := range crdList.Items {
+		for _, suffix := range ACMCRDSuffixes {
+			if strings.HasSuffix(crd.Name, suffix) {
+				acmCRDs = append(acmCRDs, crd)
+				break
+			}
+		}
+	}
+	return acmCRDs, nil
+}
+
+// DiscoverCustomResourcesForCRD returns all instances of a given CRD
+func DiscoverCustomResourcesForCRD(ctx context.Context, c client.Client, crd apiextensionsv1.CustomResourceDefinition) ([]unstructured.Unstructured, error) {
+	// Get the stored version to query
+	var version string
+	for _, v := range crd.Spec.Versions {
+		if v.Storage {
+			version = v.Name
+			break
+		}
+	}
+	if version == "" && len(crd.Spec.Versions) > 0 {
+		version = crd.Spec.Versions[0].Name
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    crd.Spec.Group,
+		Version:  version,
+		Resource: crd.Spec.Names.Plural,
+	}
+
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   gvr.Group,
+		Version: gvr.Version,
+		Kind:    crd.Spec.Names.ListKind,
+	})
+
+	if err := c.List(ctx, list); err != nil {
+		// Ignore errors - CRD might be in the process of being deleted
+		return nil, nil
+	}
+
+	return list.Items, nil
+}
+
+// DiscoverACMClusterRoles returns all ACM-related ClusterRoles
+func DiscoverACMClusterRoles(ctx context.Context, c client.Client) ([]rbacv1.ClusterRole, error) {
+	crList := &rbacv1.ClusterRoleList{}
+	if err := c.List(ctx, crList); err != nil {
+		return nil, err
+	}
+
+	var acmRoles []rbacv1.ClusterRole
+	for _, cr := range crList.Items {
+		if isACMClusterRole(cr.Name) {
+			acmRoles = append(acmRoles, cr)
+		}
+	}
+	return acmRoles, nil
+}
+
+// DiscoverACMClusterRoleBindings returns all ACM-related ClusterRoleBindings
+func DiscoverACMClusterRoleBindings(ctx context.Context, c client.Client) ([]rbacv1.ClusterRoleBinding, error) {
+	crbList := &rbacv1.ClusterRoleBindingList{}
+	if err := c.List(ctx, crbList); err != nil {
+		return nil, err
+	}
+
+	var acmBindings []rbacv1.ClusterRoleBinding
+	for _, crb := range crbList.Items {
+		if isACMClusterRole(crb.Name) || isACMClusterRole(crb.RoleRef.Name) {
+			acmBindings = append(acmBindings, crb)
+		}
+	}
+	return acmBindings, nil
+}
+
+// DiscoverACMAPIServices returns all ACM-related APIServices
+func DiscoverACMAPIServices(ctx context.Context, c client.Client) ([]apiregistrationv1.APIService, error) {
+	apiList := &apiregistrationv1.APIServiceList{}
+	if err := c.List(ctx, apiList); err != nil {
+		return nil, err
+	}
+
+	var acmAPIs []apiregistrationv1.APIService
+	for _, api := range apiList.Items {
+		for _, suffix := range ACMCRDSuffixes {
+			if strings.HasSuffix(api.Spec.Group, suffix) {
+				acmAPIs = append(acmAPIs, api)
+				break
+			}
+		}
+	}
+	return acmAPIs, nil
+}
+
+// DiscoverACMWebhooks returns all ACM-related ValidatingWebhookConfigurations and MutatingWebhookConfigurations
+func DiscoverACMWebhooks(ctx context.Context, c client.Client) ([]client.Object, error) {
+	var webhooks []client.Object
+
+	// Validating webhooks
+	vwhList := &admissionv1.ValidatingWebhookConfigurationList{}
+	if err := c.List(ctx, vwhList); err == nil {
+		for i := range vwhList.Items {
+			if isACMWebhook(vwhList.Items[i].Name) {
+				webhooks = append(webhooks, &vwhList.Items[i])
+			}
+		}
+	}
+
+	// Mutating webhooks
+	mwhList := &admissionv1.MutatingWebhookConfigurationList{}
+	if err := c.List(ctx, mwhList); err == nil {
+		for i := range mwhList.Items {
+			if isACMWebhook(mwhList.Items[i].Name) {
+				webhooks = append(webhooks, &mwhList.Items[i])
+			}
+		}
+	}
+
+	return webhooks, nil
+}
+
+// isACMClusterRole returns true if the ClusterRole name is ACM-related
+func isACMClusterRole(name string) bool {
+	acmPrefixes := []string{
+		"open-cluster-management",
+		"multiclusterhubs.operator.open-cluster-management.io",
+		"olm.og.open-cluster-management",
+		"system:open-cluster-management",
+	}
+	for _, prefix := range acmPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isACMWebhook returns true if the webhook name is ACM-related
+func isACMWebhook(name string) bool {
+	acmKeywords := []string{
+		"open-cluster-management",
+		"multicluster",
+		"ocm-webhook",
+		"managedcluster",
+		"klusterlet",
+	}
+	nameLower := strings.ToLower(name)
+	for _, keyword := range acmKeywords {
+		if strings.Contains(nameLower, keyword) {
+			return true
+		}
+	}
+	return false
 }

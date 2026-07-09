@@ -115,43 +115,128 @@ func (r *MultiClusterHubReconciler) escalationPass2(
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
-// escalationPass3: Strip finalizers and force-delete everything
+// escalationPass3: Comprehensive cleanup - CRs, CRDs, ClusterRoles, APIServices, Webhooks, Namespaces
 func (r *MultiClusterHubReconciler) escalationPass3(
 	ctx context.Context,
 	m *operatorv1.MultiClusterHub,
 	filter *cleanup.ACMResourceFilter,
 ) (ctrl.Result, error) {
-	r.Log.Info("Escalation Pass 3: Stripping finalizers and force-deleting all resources",
+	r.Log.Info("Escalation Pass 3: Comprehensive cluster cleanup (CRs, CRDs, RBAC, APIServices, Webhooks)",
 		"mch", m.Name, "namespace", m.Namespace)
 
+	// Step 1: Delete namespaced resources with labels (existing logic)
 	resources, err := filter.DiscoverLabeledResources(ctx, r.Client)
 	if err != nil {
-		r.Log.Info("Error discovering resources during escalation pass 3", "error", err)
+		r.Log.Info("Error discovering labeled resources", "error", err)
 	}
-
+	r.Log.Info("Deleting namespaced resources", "count", len(resources))
 	for i := range resources {
 		if err := cleanup.StripFinalizersFromUnstructured(ctx, r.Client, &resources[i]); err != nil && !errors.IsNotFound(err) {
-			r.Log.Error(err, "Failed to strip finalizers in pass 3",
-				"kind", resources[i].GetKind(), "name", resources[i].GetName())
+			r.Log.V(1).Info("Failed to strip finalizers", "kind", resources[i].GetKind(), "name", resources[i].GetName(), "error", err)
 		}
 		if err := r.Client.Delete(ctx, &resources[i]); err != nil && !errors.IsNotFound(err) {
-			r.Log.Error(err, "Pass 3 delete failed",
-				"kind", resources[i].GetKind(), "name", resources[i].GetName())
+			r.Log.V(1).Info("Failed to delete resource", "kind", resources[i].GetKind(), "name", resources[i].GetName(), "error", err)
 		}
 	}
 
-	// Force-delete stuck namespaces
+	// Step 2: Delete all CR instances for ACM CRDs
+	r.Log.Info("Discovering ACM CRDs to delete their instances")
+	acmCRDs, err := cleanup.DiscoverACMCRDs(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering ACM CRDs", "error", err)
+	} else {
+		r.Log.Info("Found ACM CRDs", "count", len(acmCRDs))
+		for _, crd := range acmCRDs {
+			// Get all instances of this CRD
+			crs, err := cleanup.DiscoverCustomResourcesForCRD(ctx, r.Client, crd)
+			if err != nil || len(crs) == 0 {
+				continue
+			}
+			r.Log.Info("Deleting CR instances", "crd", crd.Name, "count", len(crs))
+			for i := range crs {
+				// Strip finalizers and delete
+				if err := cleanup.StripFinalizersFromUnstructured(ctx, r.Client, &crs[i]); err != nil && !errors.IsNotFound(err) {
+					r.Log.V(1).Info("Failed to strip CR finalizers", "crd", crd.Name, "name", crs[i].GetName(), "error", err)
+				}
+				if err := r.Client.Delete(ctx, &crs[i]); err != nil && !errors.IsNotFound(err) {
+					r.Log.V(1).Info("Failed to delete CR", "crd", crd.Name, "name", crs[i].GetName(), "error", err)
+				}
+			}
+		}
+	}
+
+	// Step 3: Delete APIServices
+	r.Log.Info("Deleting ACM APIServices")
+	apiServices, err := cleanup.DiscoverACMAPIServices(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering APIServices", "error", err)
+	} else {
+		r.Log.Info("Found ACM APIServices", "count", len(apiServices))
+		for i := range apiServices {
+			if err := r.Client.Delete(ctx, &apiServices[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete APIService", "name", apiServices[i].Name, "error", err)
+			}
+		}
+	}
+
+	// Step 4: Delete Webhooks
+	r.Log.Info("Deleting ACM Webhooks")
+	webhooks, err := cleanup.DiscoverACMWebhooks(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering webhooks", "error", err)
+	} else {
+		r.Log.Info("Found ACM Webhooks", "count", len(webhooks))
+		for _, wh := range webhooks {
+			if err := r.Client.Delete(ctx, wh); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete webhook", "error", err)
+			}
+		}
+	}
+
+	// Step 5: Delete CRDs (after CRs are gone)
+	r.Log.Info("Deleting ACM CRDs", "count", len(acmCRDs))
+	for i := range acmCRDs {
+		if err := r.Client.Delete(ctx, &acmCRDs[i]); err != nil && !errors.IsNotFound(err) {
+			r.Log.V(1).Info("Failed to delete CRD", "name", acmCRDs[i].Name, "error", err)
+		}
+	}
+
+	// Step 6: Delete ClusterRoleBindings (before ClusterRoles)
+	r.Log.Info("Deleting ACM ClusterRoleBindings")
+	clusterRoleBindings, err := cleanup.DiscoverACMClusterRoleBindings(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering ClusterRoleBindings", "error", err)
+	} else {
+		r.Log.Info("Found ACM ClusterRoleBindings", "count", len(clusterRoleBindings))
+		for i := range clusterRoleBindings {
+			if err := r.Client.Delete(ctx, &clusterRoleBindings[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete ClusterRoleBinding", "name", clusterRoleBindings[i].Name, "error", err)
+			}
+		}
+	}
+
+	// Step 7: Delete ClusterRoles
+	r.Log.Info("Deleting ACM ClusterRoles")
+	clusterRoles, err := cleanup.DiscoverACMClusterRoles(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering ClusterRoles", "error", err)
+	} else {
+		r.Log.Info("Found ACM ClusterRoles", "count", len(clusterRoles))
+		for i := range clusterRoles {
+			if err := r.Client.Delete(ctx, &clusterRoles[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete ClusterRole", "name", clusterRoles[i].Name, "error", err)
+			}
+		}
+	}
+
+	// Step 8: Force-delete ACM namespaces (except operator namespace)
+	r.Log.Info("Force-deleting ACM namespaces (preserving operator namespace)")
 	if err := r.forceDeleteACMNamespaces(ctx, filter); err != nil {
-		r.Log.Error(err, "Failed to force-delete ACM namespaces in pass 3")
+		r.Log.Error(err, "Failed to force-delete ACM namespaces")
 	}
 
 	resourceCount, _ := filter.CountRemainingResources(ctx, r.Client)
 	r.updateEscalationProgress(m, resourceCount, 4)
-
-	if resourceCount > 0 {
-		r.Log.Error(fmt.Errorf("resources remaining after pass 3"),
-			"Some resources could not be force-deleted", "count", resourceCount)
-	}
 
 	r.Log.Info("Escalation Pass 3 complete", "resourcesRemaining", resourceCount)
 	return r.completeEscalation(ctx, m)
