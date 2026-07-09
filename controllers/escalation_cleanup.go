@@ -165,7 +165,7 @@ func (r *MultiClusterHubReconciler) completeEscalation(
 	r.Log.Info("Escalated cleanup completed - all ACM resources removed",
 		"mch", m.Name, "namespace", m.Namespace)
 
-	m.Status.UninstallPhase = operatorv1.UninstallCompleted
+	m.Status.UninstallEscalationPhase = operatorv1.UninstallCompleted
 
 	updateUninstallProgressingCondition(&m.Status, operatorv1.UninstallCompleted,
 		EscalationCompletedReason, "All ACM resources removed")

@@ -171,12 +171,12 @@ func (r *MultiClusterHubReconciler) calculateStatus(ctx context.Context, hub *op
 	mceVersionCompliance := r.calculateMCEVersionCompliance(ctx)
 
 	status := operatorsv1.MultiClusterHubStatus{
-		CurrentVersion:       hub.Status.CurrentVersion,
-		DesiredVersion:       version.Version,
-		Components:           components,
-		MCEVersionCompliance: mceVersionCompliance,
-		UninstallPhase:       hub.Status.UninstallPhase,
-		UninstallEscalation:  hub.Status.UninstallEscalation,
+		CurrentVersion:           hub.Status.CurrentVersion,
+		DesiredVersion:           version.Version,
+		Components:               components,
+		MCEVersionCompliance:     mceVersionCompliance,
+		UninstallEscalationPhase: hub.Status.UninstallEscalationPhase,
+		UninstallEscalation:      hub.Status.UninstallEscalation,
 	}
 
 	// Set current version

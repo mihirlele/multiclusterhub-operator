@@ -325,8 +325,8 @@ spec:
                 description: Represents the running phase of the MultiClusterHub
                 type: string
               uninstallEscalation:
-                description: UninstallEscalation tracks escalated cleanup state when
-                  normal deletion is stuck
+                description: UninstallEscalation tracks detailed escalation state
+                  when cleanup is stuck
                 properties:
                   currentPass:
                     description: CurrentPass tracks which deletion pass is in progress
@@ -355,9 +355,9 @@ spec:
                 required:
                 - triggered
                 type: object
-              uninstallPhase:
-                description: UninstallPhase tracks the progression of MCH uninstallation
-                  escalation
+              uninstallEscalationPhase:
+                description: UninstallEscalationPhase tracks the escalation state
+                  during MCH uninstallation
                 type: string
             type: object
         type: object

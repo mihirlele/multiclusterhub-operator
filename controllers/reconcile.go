@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	operatorv1 "github.com/stolostron/multiclusterhub-operator/api/v1"
 	"github.com/stolostron/multiclusterhub-operator/pkg/cleanup"
@@ -205,11 +206,14 @@ func (r *MultiClusterHubReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			// Check if escalation should be triggered for stuck deletion
 			escalationConfig := LoadEscalationConfig()
 			if escalationConfig.EscalationEnabled &&
-				multiClusterHub.Status.UninstallPhase != operatorv1.UninstallEscalated &&
-				multiClusterHub.Status.UninstallPhase != operatorv1.UninstallCompleted {
+				multiClusterHub.Status.UninstallEscalationPhase != operatorv1.UninstallEscalated &&
+				multiClusterHub.Status.UninstallEscalationPhase != operatorv1.UninstallCompleted {
 				shouldEscalate, reason := r.shouldTriggerEscalation(ctx, multiClusterHub, escalationConfig)
 				if shouldEscalate {
-					r.Log.Info("Triggering escalated cleanup", "reason", reason)
+					r.Log.Info("Escalation triggered - activating force cleanup",
+						"reason", reason,
+						"mch", multiClusterHub.Name,
+						"namespace", multiClusterHub.Namespace)
 
 					filter := cleanup.NewACMResourceFilter(multiClusterHub)
 					resourceCount, _ := filter.CountRemainingResources(ctx, r.Client)
@@ -217,7 +221,21 @@ func (r *MultiClusterHubReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 					r.triggerEscalation(multiClusterHub, reason, resourceCount)
 					r.emitEscalationEvent(multiClusterHub, reason,
 						fmt.Sprintf("Escalation triggered: %s. Resources remaining: %d", reason, resourceCount))
+				} else {
+					// Log periodic progress during normal cleanup (every 5th reconcile to reduce noise)
+					r.EscalationTracker.mu.Lock()
+					if r.EscalationTracker.Initialized {
+						elapsed := time.Since(r.EscalationTracker.FirstSeenTime)
+						if int(elapsed.Seconds())%100 == 0 { // Log every ~100 seconds (5 reconciles * 20s)
+							r.Log.V(1).Info("Normal cleanup in progress",
+								"elapsed", elapsed.Round(time.Second).String(),
+								"escalationThreshold", escalationConfig.UninstallTimeout.String())
+						}
+					}
+					r.EscalationTracker.mu.Unlock()
 				}
+			} else if !escalationConfig.EscalationEnabled {
+				r.Log.V(1).Info("Escalation disabled by configuration")
 			}
 
 			// Run finalization logic. If the finalization

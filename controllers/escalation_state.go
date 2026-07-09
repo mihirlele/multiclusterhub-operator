@@ -68,7 +68,7 @@ func parseBoolEnv(envVar string, defaultVal bool) bool {
 
 // initializeUninstallPhase sets the initial phase when deletion timestamp first appears
 func (r *MultiClusterHubReconciler) initializeUninstallPhase(m *operatorv1.MultiClusterHub) {
-	m.Status.UninstallPhase = operatorv1.UninstallNotRequired
+	m.Status.UninstallEscalationPhase = operatorv1.UninstallNotRequired
 
 	r.EscalationTracker.mu.Lock()
 	defer r.EscalationTracker.mu.Unlock()
@@ -80,10 +80,20 @@ func (r *MultiClusterHubReconciler) initializeUninstallPhase(m *operatorv1.Multi
 		r.EscalationTracker.LastResourceCount = -1
 		r.EscalationTracker.Initialized = true
 		r.EscalationTracker.StuckFinalizers = make(map[string]time.Time)
-	}
 
-	r.Log.Info("Monitoring MCH deletion for stuck conditions",
-		"mch", m.Name, "namespace", m.Namespace)
+		// Log escalation configuration for debugging
+		config := LoadEscalationConfig()
+		r.Log.Info("Escalation tracking initialized",
+			"mch", m.Name,
+			"namespace", m.Namespace,
+			"escalationEnabled", config.EscalationEnabled,
+			"uninstallTimeout", config.UninstallTimeout.String(),
+			"stuckFinalizerTimeout", config.StuckFinalizerTimeout.String(),
+			"resourcePlateauTimeout", config.ResourcePlateauTimeout.String())
+	} else {
+		r.Log.Info("Escalation tracking re-initialized after operator restart",
+			"mch", m.Name, "namespace", m.Namespace)
+	}
 }
 
 // shouldTriggerEscalation checks if stuck conditions warrant escalation
@@ -97,8 +107,8 @@ func (r *MultiClusterHubReconciler) shouldTriggerEscalation(
 	}
 
 	// Don't escalate if already escalated or completed
-	if m.Status.UninstallPhase == operatorv1.UninstallEscalated ||
-		m.Status.UninstallPhase == operatorv1.UninstallCompleted {
+	if m.Status.UninstallEscalationPhase == operatorv1.UninstallEscalated ||
+		m.Status.UninstallEscalationPhase == operatorv1.UninstallCompleted {
 		return false, ""
 	}
 
@@ -106,6 +116,8 @@ func (r *MultiClusterHubReconciler) shouldTriggerEscalation(
 	defer r.EscalationTracker.mu.Unlock()
 
 	if !r.EscalationTracker.Initialized {
+		r.Log.V(1).Info("Escalation check skipped: tracker not initialized",
+			"mch", m.Name, "namespace", m.Namespace)
 		return false, ""
 	}
 
@@ -186,7 +198,7 @@ func (r *MultiClusterHubReconciler) triggerEscalation(
 	resourceCount int,
 ) {
 	now := metav1.Now()
-	m.Status.UninstallPhase = operatorv1.UninstallEscalated
+	m.Status.UninstallEscalationPhase = operatorv1.UninstallEscalated
 	m.Status.UninstallEscalation = &operatorv1.UninstallEscalationStatus{
 		Triggered:          true,
 		TriggeredTime:      &now,

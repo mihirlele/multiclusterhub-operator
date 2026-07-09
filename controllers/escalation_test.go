@@ -105,8 +105,8 @@ func TestInitializeUninstallPhase(t *testing.T) {
 
 	r.initializeUninstallPhase(m)
 
-	if m.Status.UninstallPhase != operatorv1.UninstallNotRequired {
-		t.Errorf("UninstallPhase = %v, want NotRequired", m.Status.UninstallPhase)
+	if m.Status.UninstallEscalationPhase != operatorv1.UninstallNotRequired {
+		t.Errorf("UninstallPhase = %v, want NotRequired", m.Status.UninstallEscalationPhase)
 	}
 	if !r.EscalationTracker.Initialized {
 		t.Error("EscalationTracker should be initialized")
@@ -139,7 +139,7 @@ func TestShouldTriggerEscalation_Disabled(t *testing.T) {
 	r := newTestReconciler()
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
-		Status:     operatorv1.MultiClusterHubStatus{UninstallPhase: operatorv1.UninstallNotRequired},
+		Status:     operatorv1.MultiClusterHubStatus{UninstallEscalationPhase: operatorv1.UninstallNotRequired},
 	}
 
 	config := EscalationConfig{EscalationEnabled: false}
@@ -153,7 +153,7 @@ func TestShouldTriggerEscalation_AlreadyEscalated(t *testing.T) {
 	r := newTestReconciler()
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
-		Status:     operatorv1.MultiClusterHubStatus{UninstallPhase: operatorv1.UninstallEscalated},
+		Status:     operatorv1.MultiClusterHubStatus{UninstallEscalationPhase: operatorv1.UninstallEscalated},
 	}
 
 	config := EscalationConfig{EscalationEnabled: true, UninstallTimeout: 15 * time.Minute}
@@ -167,7 +167,7 @@ func TestShouldTriggerEscalation_AlreadyCompleted(t *testing.T) {
 	r := newTestReconciler()
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
-		Status:     operatorv1.MultiClusterHubStatus{UninstallPhase: operatorv1.UninstallCompleted},
+		Status:     operatorv1.MultiClusterHubStatus{UninstallEscalationPhase: operatorv1.UninstallCompleted},
 	}
 
 	config := EscalationConfig{EscalationEnabled: true, UninstallTimeout: 15 * time.Minute}
@@ -181,7 +181,7 @@ func TestShouldTriggerEscalation_NotInitialized(t *testing.T) {
 	r := newTestReconciler()
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
-		Status:     operatorv1.MultiClusterHubStatus{UninstallPhase: operatorv1.UninstallNotRequired},
+		Status:     operatorv1.MultiClusterHubStatus{UninstallEscalationPhase: operatorv1.UninstallNotRequired},
 	}
 
 	config := EscalationConfig{EscalationEnabled: true, UninstallTimeout: 15 * time.Minute}
@@ -200,7 +200,7 @@ func TestShouldTriggerEscalation_Timeout(t *testing.T) {
 
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
-		Status:     operatorv1.MultiClusterHubStatus{UninstallPhase: operatorv1.UninstallNotRequired},
+		Status:     operatorv1.MultiClusterHubStatus{UninstallEscalationPhase: operatorv1.UninstallNotRequired},
 	}
 
 	config := EscalationConfig{
@@ -227,7 +227,7 @@ func TestShouldTriggerEscalation_NoEscalationWithinTimeout(t *testing.T) {
 
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
-		Status:     operatorv1.MultiClusterHubStatus{UninstallPhase: operatorv1.UninstallNotRequired},
+		Status:     operatorv1.MultiClusterHubStatus{UninstallEscalationPhase: operatorv1.UninstallNotRequired},
 	}
 
 	config := EscalationConfig{
@@ -269,7 +269,7 @@ func TestShouldTriggerEscalation_ResourcePlateau(t *testing.T) {
 
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
-		Status:     operatorv1.MultiClusterHubStatus{UninstallPhase: operatorv1.UninstallNotRequired},
+		Status:     operatorv1.MultiClusterHubStatus{UninstallEscalationPhase: operatorv1.UninstallNotRequired},
 	}
 
 	config := EscalationConfig{
@@ -293,13 +293,13 @@ func TestTriggerEscalation(t *testing.T) {
 	r := newTestReconciler()
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
-		Status:     operatorv1.MultiClusterHubStatus{UninstallPhase: operatorv1.UninstallNotRequired},
+		Status:     operatorv1.MultiClusterHubStatus{UninstallEscalationPhase: operatorv1.UninstallNotRequired},
 	}
 
 	r.triggerEscalation(m, EscalationTimeoutReason, 5)
 
-	if m.Status.UninstallPhase != operatorv1.UninstallEscalated {
-		t.Errorf("UninstallPhase = %v, want Escalated", m.Status.UninstallPhase)
+	if m.Status.UninstallEscalationPhase != operatorv1.UninstallEscalated {
+		t.Errorf("UninstallPhase = %v, want Escalated", m.Status.UninstallEscalationPhase)
 	}
 	if m.Status.UninstallEscalation == nil {
 		t.Fatal("UninstallEscalation should not be nil")
@@ -398,7 +398,7 @@ func TestExecuteEscalatedCleanup_PassRouting(t *testing.T) {
 			m := &operatorv1.MultiClusterHub{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
 				Status: operatorv1.MultiClusterHubStatus{
-					UninstallPhase: operatorv1.UninstallEscalated,
+					UninstallEscalationPhase: operatorv1.UninstallEscalated,
 					UninstallEscalation: &operatorv1.UninstallEscalationStatus{
 						Triggered:   true,
 						CurrentPass: tt.currentPass,
@@ -412,13 +412,13 @@ func TestExecuteEscalatedCleanup_PassRouting(t *testing.T) {
 			}
 
 			if tt.currentPass >= 4 {
-				if m.Status.UninstallPhase != operatorv1.UninstallCompleted {
-					t.Errorf("phase = %v, want Completed for pass >= 4", m.Status.UninstallPhase)
+				if m.Status.UninstallEscalationPhase != operatorv1.UninstallCompleted {
+					t.Errorf("phase = %v, want Completed for pass >= 4", m.Status.UninstallEscalationPhase)
 				}
 			} else if tt.currentPass == 3 {
 				// Pass 3 completes escalation
-				if m.Status.UninstallPhase != operatorv1.UninstallCompleted {
-					t.Errorf("phase = %v, want Completed after pass 3", m.Status.UninstallPhase)
+				if m.Status.UninstallEscalationPhase != operatorv1.UninstallCompleted {
+					t.Errorf("phase = %v, want Completed after pass 3", m.Status.UninstallEscalationPhase)
 				}
 			} else {
 				// Passes 1-2 should requeue
@@ -439,7 +439,7 @@ func TestCompleteEscalation(t *testing.T) {
 	m := &operatorv1.MultiClusterHub{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ocm"},
 		Status: operatorv1.MultiClusterHubStatus{
-			UninstallPhase: operatorv1.UninstallEscalated,
+			UninstallEscalationPhase: operatorv1.UninstallEscalated,
 			UninstallEscalation: &operatorv1.UninstallEscalationStatus{
 				Triggered:     true,
 				TriggeredTime: &triggered,
@@ -455,8 +455,8 @@ func TestCompleteEscalation(t *testing.T) {
 	if result.RequeueAfter != 0 {
 		t.Errorf("completeEscalation() should not requeue, got %v", result.RequeueAfter)
 	}
-	if m.Status.UninstallPhase != operatorv1.UninstallCompleted {
-		t.Errorf("UninstallPhase = %v, want Completed", m.Status.UninstallPhase)
+	if m.Status.UninstallEscalationPhase != operatorv1.UninstallCompleted {
+		t.Errorf("UninstallPhase = %v, want Completed", m.Status.UninstallEscalationPhase)
 	}
 
 	cond := GetHubCondition(m.Status, operatorv1.UninstallProgressing)

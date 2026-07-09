@@ -149,13 +149,16 @@ const (
 type UninstallPhaseType string
 
 const (
-	// UninstallNotRequired indicates normal deletion is proceeding without issues; escalation is dormant
+	// UninstallNotRequired indicates normal deletion is proceeding without issues; escalation is not needed
+	// This phase appears immediately when MCH deletion starts and remains until escalation is triggered
 	UninstallNotRequired UninstallPhaseType = "NotRequired"
 
-	// UninstallEscalated indicates stuck deletion detected; aggressive cleanup activated
+	// UninstallEscalated indicates stuck deletion detected; aggressive multi-pass cleanup is active
+	// Triggers when: timeout exceeded, resource count plateau, or finalizers stuck
 	UninstallEscalated UninstallPhaseType = "Escalated"
 
-	// UninstallCompleted indicates all ACM resources removed; MCH CR ready for final removal
+	// UninstallCompleted indicates escalation finished; all ACM resources removed except MCH CR itself
+	// MCH finalizer will be removed next, allowing CR deletion
 	UninstallCompleted UninstallPhaseType = "Completed"
 )
 
@@ -222,11 +225,11 @@ type MultiClusterHubStatus struct {
 	// MCEVersionCompliance tracks whether the MCE version meets the required channel version
 	MCEVersionCompliance *MCEVersionComplianceStatus `json:"mceVersionCompliance,omitempty"`
 
-	// UninstallPhase tracks the progression of MCH uninstallation escalation
+	// UninstallEscalationPhase tracks the escalation state during MCH uninstallation
 	// +optional
-	UninstallPhase UninstallPhaseType `json:"uninstallPhase,omitempty"`
+	UninstallEscalationPhase UninstallPhaseType `json:"uninstallEscalationPhase,omitempty"`
 
-	// UninstallEscalation tracks escalated cleanup state when normal deletion is stuck
+	// UninstallEscalation tracks detailed escalation state when cleanup is stuck
 	// +optional
 	UninstallEscalation *UninstallEscalationStatus `json:"uninstallEscalation,omitempty"`
 }

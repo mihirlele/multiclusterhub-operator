@@ -41,13 +41,13 @@ import (
 
 func (r *MultiClusterHubReconciler) finalizeHub(reqLogger logr.Logger, m *operatorv1.MultiClusterHub, ocpConsole,
 	isSTSEnabled bool) error {
-	// Initialize uninstall phase on first deletion reconcile
-	if m.Status.UninstallPhase == "" {
+	// Initialize escalation tracking on first deletion reconcile OR if tracker was lost (operator restart)
+	if m.Status.UninstallEscalationPhase == "" || !r.EscalationTracker.Initialized {
 		r.initializeUninstallPhase(m)
 	}
 
 	// If escalation already triggered, skip normal cleanup and run escalated cleanup
-	if m.Status.UninstallPhase == operatorv1.UninstallEscalated {
+	if m.Status.UninstallEscalationPhase == operatorv1.UninstallEscalated {
 		result, err := r.executeEscalatedCleanup(context.TODO(), m)
 		if err != nil {
 			return err

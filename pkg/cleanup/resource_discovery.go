@@ -55,7 +55,7 @@ func IsACMNamespace(name string) bool {
 	return false
 }
 
-// DiscoverACMNamespaces returns all namespaces that are ACM-related
+// DiscoverACMNamespaces returns all namespaces that are ACM-related, excluding the operator's own namespace
 func (f *ACMResourceFilter) DiscoverACMNamespaces(ctx context.Context, c client.Client) ([]corev1.Namespace, error) {
 	nsList := &corev1.NamespaceList{}
 	if err := c.List(ctx, nsList); err != nil {
@@ -64,6 +64,10 @@ func (f *ACMResourceFilter) DiscoverACMNamespaces(ctx context.Context, c client.
 
 	var acmNamespaces []corev1.Namespace
 	for _, ns := range nsList.Items {
+		// Skip the operator's own namespace to prevent self-deletion
+		if ns.Name == f.MCHNamespace {
+			continue
+		}
 		if IsACMNamespace(ns.Name) {
 			acmNamespaces = append(acmNamespaces, ns)
 		}
