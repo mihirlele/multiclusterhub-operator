@@ -181,6 +181,7 @@ func (f *ACMResourceFilter) DiscoverLabeledResources(ctx context.Context, c clie
 // ACMCRDSuffixes are CRD name suffixes that identify ACM-related CRDs and dependencies
 var ACMCRDSuffixes = []string{
 	".open-cluster-management.io",
+	".cluster.open-cluster-management.io",
 	".multicluster.openshift.io",
 	".agent-install.openshift.io",
 	".hive.openshift.io",
