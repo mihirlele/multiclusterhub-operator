@@ -146,6 +146,10 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 	} else {
 		r.Log.Info("Found ACM APIServices", "count", len(apiServices))
 		for i := range apiServices {
+			// Strip finalizers first (APIServices can have stuck finalizers)
+			if err := cleanup.StripFinalizers(ctx, r.Client, &apiServices[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to strip APIService finalizers", "name", apiServices[i].Name, "error", err)
+			}
 			if err := r.Client.Delete(ctx, &apiServices[i]); err != nil && !errors.IsNotFound(err) {
 				r.Log.V(1).Info("Failed to delete APIService", "name", apiServices[i].Name, "error", err)
 			}
@@ -254,8 +258,22 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 		}
 	}
 
-	// Step 9: Clean up hypershift namespace resources
-	r.Log.Info("Cleaning up hypershift namespace resources")
+	// Step 8.5: Clean up kube-system namespace RBAC (klusterlet resources)
+	r.Log.Info("Cleaning up kube-system namespace RBAC")
+	kubeSystemRoles, err := cleanup.DiscoverACMRolesInNamespace(ctx, r.Client, "kube-system")
+	if err != nil {
+		r.Log.Info("Error discovering resources in kube-system", "error", err)
+	} else if len(kubeSystemRoles) > 0 {
+		r.Log.Info("Deleting ACM Roles/RoleBindings from kube-system", "count", len(kubeSystemRoles))
+		for i := range kubeSystemRoles {
+			if err := r.Client.Delete(ctx, kubeSystemRoles[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete resource from kube-system", "error", err)
+			}
+		}
+	}
+
+	// Step 9: Clean up hypershift namespace
+	r.Log.Info("Cleaning up hypershift namespace")
 	hypershiftResources, err := cleanup.DiscoverHypershiftResources(ctx, r.Client)
 	if err != nil {
 		r.Log.Info("Error discovering hypershift resources", "error", err)
@@ -270,6 +288,12 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 				r.Log.V(1).Info("Failed to delete hypershift resource", "error", err)
 			}
 		}
+	}
+
+	// Force-delete hypershift namespace
+	r.Log.Info("Force-deleting hypershift namespace")
+	if err := cleanup.ForceDeleteNamespace(ctx, r.Client, "hypershift"); err != nil {
+		r.Log.Info("Failed to force-delete hypershift namespace", "error", err)
 	}
 
 	// Step 10: Force-delete ACM namespaces (except operator namespace)
