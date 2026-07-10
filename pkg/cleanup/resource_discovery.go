@@ -189,6 +189,7 @@ var ACMCRDSuffixes = []string{
 	".hypershift.openshift.io",
 	".cluster.x-k8s.io",
 	".infrastructure.cluster.x-k8s.io",
+	".ipam.cluster.x-k8s.io",
 	".capi-provider.agent-install.openshift.io",
 	".scheduling.hypershift.openshift.io",
 	".certificates.hypershift.openshift.io",
@@ -343,6 +344,9 @@ func isACMClusterRole(name string) bool {
 		"hypershift",
 		"server-foundation",
 		"klusterlet",
+		"global-search-",
+		"access-to-brokers-",
+		"thanos-ruler-",
 	}
 	for _, prefix := range acmPrefixes {
 		if strings.HasPrefix(name, prefix) {

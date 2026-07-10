@@ -214,7 +214,65 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 		}
 	}
 
-	// Step 7: Force-delete ACM namespaces (except operator namespace)
+	// Step 7: Delete OLM Operator CRs
+	r.Log.Info("Deleting OLM Operator CRs")
+	olmOperators, err := cleanup.DiscoverOLMOperators(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering OLM Operators", "error", err)
+	} else {
+		r.Log.Info("Found OLM Operators", "count", len(olmOperators))
+		for i := range olmOperators {
+			if err := r.Client.Delete(ctx, &olmOperators[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete OLM Operator", "name", olmOperators[i].GetName(), "error", err)
+			}
+		}
+	}
+
+	// Step 8: Clean up local-cluster namespace (managed cluster resources)
+	r.Log.Info("Cleaning up local-cluster namespace")
+	localClusterNS, err := cleanup.DiscoverLocalClusterNamespace(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering local-cluster namespace", "error", err)
+	} else if localClusterNS != nil {
+		// Delete Roles/RoleBindings in local-cluster namespace
+		localClusterRoles, err := cleanup.DiscoverACMRolesInNamespace(ctx, r.Client, "local-cluster")
+		if err != nil {
+			r.Log.Info("Error discovering resources in local-cluster", "error", err)
+		} else {
+			r.Log.Info("Deleting ACM Roles/RoleBindings from local-cluster", "count", len(localClusterRoles))
+			for i := range localClusterRoles {
+				if err := r.Client.Delete(ctx, localClusterRoles[i]); err != nil && !errors.IsNotFound(err) {
+					r.Log.V(1).Info("Failed to delete resource from local-cluster", "error", err)
+				}
+			}
+		}
+
+		// Force-delete local-cluster namespace
+		r.Log.Info("Force-deleting local-cluster namespace")
+		if err := cleanup.ForceDeleteNamespace(ctx, r.Client, "local-cluster"); err != nil {
+			r.Log.Info("Failed to force-delete local-cluster namespace", "error", err)
+		}
+	}
+
+	// Step 9: Clean up hypershift namespace resources
+	r.Log.Info("Cleaning up hypershift namespace resources")
+	hypershiftResources, err := cleanup.DiscoverHypershiftResources(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering hypershift resources", "error", err)
+	} else if len(hypershiftResources) > 0 {
+		r.Log.Info("Deleting hypershift deployments", "count", len(hypershiftResources))
+		for i := range hypershiftResources {
+			// Strip finalizers and delete
+			if err := cleanup.StripFinalizersFromUnstructured(ctx, r.Client, &hypershiftResources[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to strip finalizers from hypershift resource", "error", err)
+			}
+			if err := r.Client.Delete(ctx, &hypershiftResources[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete hypershift resource", "error", err)
+			}
+		}
+	}
+
+	// Step 10: Force-delete ACM namespaces (except operator namespace)
 	r.Log.Info("Force-deleting ACM namespaces (preserving operator namespace)")
 	if err := r.forceDeleteACMNamespaces(ctx, filter); err != nil {
 		r.Log.Error(err, "Failed to force-delete ACM namespaces")

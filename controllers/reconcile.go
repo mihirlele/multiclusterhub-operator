@@ -205,9 +205,14 @@ func (r *MultiClusterHubReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if controllerutil.ContainsFinalizer(multiClusterHub, hubFinalizer) {
 			// Check if escalation should be triggered for stuck deletion
 			escalationConfig := LoadEscalationConfig()
+			r.Log.Info("Escalation check - evaluating conditions",
+				"enabled", escalationConfig.EscalationEnabled,
+				"currentPhase", multiClusterHub.Status.UninstallEscalationPhase,
+				"mch", multiClusterHub.Name)
 			if escalationConfig.EscalationEnabled &&
 				multiClusterHub.Status.UninstallEscalationPhase != operatorv1.UninstallEscalated &&
 				multiClusterHub.Status.UninstallEscalationPhase != operatorv1.UninstallCompleted {
+				r.Log.Info("Calling shouldTriggerEscalation check", "mch", multiClusterHub.Name)
 				shouldEscalate, reason := r.shouldTriggerEscalation(ctx, multiClusterHub, escalationConfig)
 				if shouldEscalate {
 					r.Log.Info("Escalation triggered - activating force cleanup",
