@@ -121,25 +121,38 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 	m *operatorv1.MultiClusterHub,
 	filter *cleanup.ACMResourceFilter,
 ) (ctrl.Result, error) {
-	r.Log.Info("Escalation Pass 3: Comprehensive cluster cleanup (CRs, CRDs, RBAC, APIServices, Webhooks)",
+	r.Log.Info("Escalation Pass 3: Comprehensive cluster cleanup (Webhooks, APIServices, CRs, CRDs, RBAC)",
 		"mch", m.Name, "namespace", m.Namespace)
 
-	// Step 1: Delete namespaced resources with labels (existing logic)
-	resources, err := filter.DiscoverLabeledResources(ctx, r.Client)
+	// Step 1: Delete Webhooks FIRST (critical - blocks other deletions)
+	r.Log.Info("Deleting ACM Webhooks")
+	webhooks, err := cleanup.DiscoverACMWebhooks(ctx, r.Client)
 	if err != nil {
-		r.Log.Info("Error discovering labeled resources", "error", err)
-	}
-	r.Log.Info("Deleting namespaced resources", "count", len(resources))
-	for i := range resources {
-		if err := cleanup.StripFinalizersFromUnstructured(ctx, r.Client, &resources[i]); err != nil && !errors.IsNotFound(err) {
-			r.Log.V(1).Info("Failed to strip finalizers", "kind", resources[i].GetKind(), "name", resources[i].GetName(), "error", err)
-		}
-		if err := r.Client.Delete(ctx, &resources[i]); err != nil && !errors.IsNotFound(err) {
-			r.Log.V(1).Info("Failed to delete resource", "kind", resources[i].GetKind(), "name", resources[i].GetName(), "error", err)
+		r.Log.Info("Error discovering webhooks", "error", err)
+	} else {
+		r.Log.Info("Found ACM Webhooks", "count", len(webhooks))
+		for _, wh := range webhooks {
+			if err := r.Client.Delete(ctx, wh); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete webhook", "error", err)
+			}
 		}
 	}
 
-	// Step 2: Delete all CR instances for ACM CRDs
+	// Step 2: Delete APIServices (critical - blocks other deletions)
+	r.Log.Info("Deleting ACM APIServices")
+	apiServices, err := cleanup.DiscoverACMAPIServices(ctx, r.Client)
+	if err != nil {
+		r.Log.Info("Error discovering APIServices", "error", err)
+	} else {
+		r.Log.Info("Found ACM APIServices", "count", len(apiServices))
+		for i := range apiServices {
+			if err := r.Client.Delete(ctx, &apiServices[i]); err != nil && !errors.IsNotFound(err) {
+				r.Log.V(1).Info("Failed to delete APIService", "name", apiServices[i].Name, "error", err)
+			}
+		}
+	}
+
+	// Step 3: Delete all CR instances for ACM CRDs
 	r.Log.Info("Discovering ACM CRDs to delete their instances")
 	acmCRDs, err := cleanup.DiscoverACMCRDs(ctx, r.Client)
 	if err != nil {
@@ -165,35 +178,7 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 		}
 	}
 
-	// Step 3: Delete APIServices
-	r.Log.Info("Deleting ACM APIServices")
-	apiServices, err := cleanup.DiscoverACMAPIServices(ctx, r.Client)
-	if err != nil {
-		r.Log.Info("Error discovering APIServices", "error", err)
-	} else {
-		r.Log.Info("Found ACM APIServices", "count", len(apiServices))
-		for i := range apiServices {
-			if err := r.Client.Delete(ctx, &apiServices[i]); err != nil && !errors.IsNotFound(err) {
-				r.Log.V(1).Info("Failed to delete APIService", "name", apiServices[i].Name, "error", err)
-			}
-		}
-	}
-
-	// Step 4: Delete Webhooks
-	r.Log.Info("Deleting ACM Webhooks")
-	webhooks, err := cleanup.DiscoverACMWebhooks(ctx, r.Client)
-	if err != nil {
-		r.Log.Info("Error discovering webhooks", "error", err)
-	} else {
-		r.Log.Info("Found ACM Webhooks", "count", len(webhooks))
-		for _, wh := range webhooks {
-			if err := r.Client.Delete(ctx, wh); err != nil && !errors.IsNotFound(err) {
-				r.Log.V(1).Info("Failed to delete webhook", "error", err)
-			}
-		}
-	}
-
-	// Step 5: Delete CRDs (after CRs are gone)
+	// Step 4: Delete CRDs (after CRs are gone)
 	r.Log.Info("Deleting ACM CRDs", "count", len(acmCRDs))
 	for i := range acmCRDs {
 		if err := r.Client.Delete(ctx, &acmCRDs[i]); err != nil && !errors.IsNotFound(err) {
@@ -201,7 +186,7 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 		}
 	}
 
-	// Step 6: Delete ClusterRoleBindings (before ClusterRoles)
+	// Step 5: Delete ClusterRoleBindings (before ClusterRoles)
 	r.Log.Info("Deleting ACM ClusterRoleBindings")
 	clusterRoleBindings, err := cleanup.DiscoverACMClusterRoleBindings(ctx, r.Client)
 	if err != nil {
@@ -215,7 +200,7 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 		}
 	}
 
-	// Step 7: Delete ClusterRoles
+	// Step 6: Delete ClusterRoles
 	r.Log.Info("Deleting ACM ClusterRoles")
 	clusterRoles, err := cleanup.DiscoverACMClusterRoles(ctx, r.Client)
 	if err != nil {
@@ -229,7 +214,7 @@ func (r *MultiClusterHubReconciler) escalationPass3(
 		}
 	}
 
-	// Step 8: Force-delete ACM namespaces (except operator namespace)
+	// Step 7: Force-delete ACM namespaces (except operator namespace)
 	r.Log.Info("Force-deleting ACM namespaces (preserving operator namespace)")
 	if err := r.forceDeleteACMNamespaces(ctx, filter); err != nil {
 		r.Log.Error(err, "Failed to force-delete ACM namespaces")
